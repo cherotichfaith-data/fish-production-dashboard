@@ -319,7 +319,7 @@ def main():
                 analyzer.add_corrected_stocking_event(cage_num=2)
                 
                 # Generate synthetic sampling data if needed
-                if analyzer.sampling_data is None or use_synthetic_sampling = True:
+                if analyzer.sampling_data is None or use_synthetic_sampling:
                     st.info("📅 Generating synthetic sampling data for analysis period: 26 Aug 2024 - 09 Jul 2025")
                     synthetic_data = analyzer.generate_synthetic_sampling_data(cage_num=2)
                     if analyzer.sampling_data is None:
