@@ -170,7 +170,7 @@ class FishProductionAnalyzer:
         return pd.DataFrame(synthetic_data)
     
     def calculate_production_metrics(self, cage_num):
-        """Calculate production metrics for a specific cage"""
+        """Calculate production metrics for a specific cage with corrected math"""
         # Filter data for specific cage
         cage_feeding = self.feeding_data[self.feeding_data['cage'] == cage_num].copy() if self.feeding_data is not None else pd.DataFrame()
         cage_sampling = self.sampling_data[self.sampling_data['cage'] == cage_num].copy() if self.sampling_data is not None else pd.DataFrame()
@@ -195,15 +195,21 @@ class FishProductionAnalyzer:
         
         for i in range(len(cage_sampling)):
             current_date = cage_sampling.iloc[i]['date']
+            current_biomass = cage_sampling.iloc[i]['biomass_kg']
             
             if i == 0:
-                # First sampling point (stocking)
-                cage_sampling.loc[i, 'growth_period_kg'] = cage_sampling.iloc[i]['biomass_kg']
-                cage_sampling.loc[i, 'cumulative_growth_kg'] = cage_sampling.iloc[i]['biomass_kg']
+                # First sampling point (stocking) - no growth or feed yet
+                cage_sampling.loc[i, 'feed_period_kg'] = 0.0
+                cage_sampling.loc[i, 'growth_period_kg'] = 0.0  # No growth at stocking
+                cage_sampling.loc[i, 'cumulative_feed_kg'] = 0.0
+                cage_sampling.loc[i, 'cumulative_growth_kg'] = 0.0
+                cage_sampling.loc[i, 'period_efcr'] = np.nan
+                cage_sampling.loc[i, 'aggregated_efcr'] = np.nan
             else:
                 prev_date = cage_sampling.iloc[i-1]['date']
+                prev_biomass = cage_sampling.iloc[i-1]['biomass_kg']
                 
-                # Calculate feed consumed in this period
+                # Calculate feed consumed in this period (exclusive of prev_date, inclusive of current_date)
                 period_feed = cage_feeding[
                     (cage_feeding['date'] > prev_date) & 
                     (cage_feeding['date'] <= current_date)
@@ -212,33 +218,39 @@ class FishProductionAnalyzer:
                 cage_sampling.loc[i, 'feed_period_kg'] = period_feed
                 cage_sampling.loc[i, 'cumulative_feed_kg'] = cage_sampling.loc[i-1, 'cumulative_feed_kg'] + period_feed
                 
-                # Calculate growth in this period
-                current_biomass = cage_sampling.iloc[i]['biomass_kg']
-                prev_biomass = cage_sampling.iloc[i-1]['biomass_kg']
-                
-                # Account for transfers
-                transfers_in = cage_transfers_in[
+                # Calculate transfers during this period
+                transfers_in_weight = cage_transfers_in[
                     (cage_transfers_in['date'] > prev_date) & 
                     (cage_transfers_in['date'] <= current_date)
-                ]['total_weight'].sum()
+                ]['total_weight'].sum() if not cage_transfers_in.empty else 0
                 
-                transfers_out = cage_transfers_out[
+                transfers_out_weight = cage_transfers_out[
                     (cage_transfers_out['date'] > prev_date) & 
                     (cage_transfers_out['date'] <= current_date)
-                ]['total_weight'].sum()
+                ]['total_weight'].sum() if not cage_transfers_out.empty else 0
                 
-                net_transfer = transfers_in - transfers_out
-                growth_period = current_biomass - prev_biomass - net_transfer
+                net_transfer_weight = transfers_in_weight - transfers_out_weight
+                
+                # CORRECTED GROWTH CALCULATION:
+                # Growth = Current Biomass - Previous Biomass - Net Transfers
+                # (Net transfers increase biomass but are not "growth")
+                growth_period = current_biomass - prev_biomass - net_transfer_weight
                 
                 cage_sampling.loc[i, 'growth_period_kg'] = growth_period
                 cage_sampling.loc[i, 'cumulative_growth_kg'] = cage_sampling.loc[i-1, 'cumulative_growth_kg'] + growth_period
                 
-                # Calculate eFCR
+                # Calculate eFCR (only if there was actual growth)
                 if growth_period > 0:
                     cage_sampling.loc[i, 'period_efcr'] = period_feed / growth_period
+                else:
+                    cage_sampling.loc[i, 'period_efcr'] = np.inf if period_feed > 0 else np.nan
                 
-                if cage_sampling.loc[i, 'cumulative_growth_kg'] > 0:
+                # Calculate aggregated eFCR
+                total_cumulative_growth = cage_sampling.loc[i, 'cumulative_growth_kg'] + current_biomass  # Add initial biomass
+                if total_cumulative_growth > 0:
                     cage_sampling.loc[i, 'aggregated_efcr'] = cage_sampling.loc[i, 'cumulative_feed_kg'] / cage_sampling.loc[i, 'cumulative_growth_kg']
+                else:
+                    cage_sampling.loc[i, 'aggregated_efcr'] = np.inf if cage_sampling.loc[i, 'cumulative_feed_kg'] > 0 else np.nan
         
         return cage_sampling
     
@@ -311,14 +323,11 @@ def main():
     
     feeding_file = st.sidebar.file_uploader("Upload Feeding Record", type=['xlsx', 'xls'], key="feeding")
     harvest_file = st.sidebar.file_uploader("Upload Fish Harvest", type=['xlsx', 'xls'], key="harvest")
-    sampling_file = st.sidebar.file_uploader("Upload Fish Sampling (Optional)", type=['xlsx', 'xls'], key="sampling")
+    sampling_file = st.sidebar.file_uploader("Upload Fish Sampling", type=['xlsx', 'xls'], key="sampling")
     transfer_file = st.sidebar.file_uploader("Upload Fish Transfer (Optional)", type=['xlsx', 'xls'], key="transfer")
     
-    use_synthetic_sampling = st.sidebar.checkbox("Use Synthetic Sampling Data", value=True, 
-                                                help="Generate synthetic sampling data if no sampling file is uploaded")
-    
-    # Auto-process data when files are uploaded
-    if feeding_file is not None:
+    # Auto-process data when required files are uploaded
+    if feeding_file is not None and sampling_file is not None:
         with st.spinner("Processing data..."):
             success = analyzer.load_and_process_data(feeding_file, transfer_file, harvest_file, sampling_file)
             
@@ -326,17 +335,8 @@ def main():
                 # Add corrected stocking event
                 analyzer.add_corrected_stocking_event(cage_num=2)
                 
-                # Generate synthetic sampling data if needed
-                if analyzer.sampling_data is None or use_synthetic_sampling:
-                    st.info("📅 Generating synthetic sampling data for analysis period: 26 Aug 2024 - 09 Jul 2025")
-                    synthetic_data = analyzer.generate_synthetic_sampling_data(cage_num=2)
-                    if analyzer.sampling_data is None:
-                        analyzer.sampling_data = synthetic_data
-                    else:
-                        # Replace any existing Cage 2 data with synthetic data
-                        analyzer.sampling_data = analyzer.sampling_data[analyzer.sampling_data['cage'] != 2]
-                        analyzer.sampling_data = pd.concat([analyzer.sampling_data, synthetic_data], ignore_index=True)
-                        analyzer.sampling_data = analyzer.sampling_data.sort_values(['cage', 'date']).reset_index(drop=True)
+                # Use uploaded sampling data (no synthetic generation)
+                st.info("📅 Using uploaded sampling data for analysis period: 26 Aug 2024 - 09 Jul 2025")
                 
                 # Process main cage data
                 cage_2_data = analyzer.calculate_production_metrics(cage_num=2)
@@ -350,15 +350,20 @@ def main():
     
     # Remove the manual process button as it's now automatic
     
-    # Main dashboard
+    # Main dashboard - automatically show Cage 2 results when data is processed
     if analyzer.processed_data:
         st.sidebar.header("📊 Dashboard Controls")
         
-        # Cage selection
+        # Cage selection - default to Cage 2
         available_cages = list(analyzer.processed_data.keys())
-        selected_cage = st.sidebar.selectbox("Select Cage", available_cages, format_func=lambda x: f"Cage {x}")
+        default_cage_index = 0 if 2 in available_cages else 0
+        if 2 in available_cages:
+            default_cage_index = available_cages.index(2)
+        selected_cage = st.sidebar.selectbox("Select Cage", available_cages, 
+                                           index=default_cage_index,
+                                           format_func=lambda x: f"Cage {x}")
         
-        # KPI selection
+        # KPI selection - show all options
         kpi_options = ["Growth", "eFCR", "Biomass", "Feed Usage"]
         selected_kpi = st.sidebar.selectbox("Select KPI", kpi_options)
         
@@ -433,7 +438,7 @@ def main():
                 
                 st.plotly_chart(fig, use_container_width=True)
             
-            # Production Summary Table
+            # Production Summary Table - Always show for the selected cage
             st.subheader(f"📋 Production Summary - Cage {selected_cage}")
             
             # Format the data for display
@@ -463,7 +468,7 @@ def main():
                 mime="text/csv"
             )
     else:
-        st.info("👆 Please upload data files and click 'Process Data' to begin analysis.")
+        st.info("👆 Please upload at least the Feeding Record file to begin analysis.")
         
         # Show sample data structure
         st.subheader("📖 Expected Data Structure")
