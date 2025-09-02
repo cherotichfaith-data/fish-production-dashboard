@@ -317,7 +317,8 @@ def main():
     use_synthetic_sampling = st.sidebar.checkbox("Use Synthetic Sampling Data", value=True, 
                                                 help="Generate synthetic sampling data if no sampling file is uploaded")
     
-    if st.sidebar.button("🔄 Process Data"):
+    # Auto-process data when files are uploaded
+    if feeding_file is not None:
         with st.spinner("Processing data..."):
             success = analyzer.load_and_process_data(feeding_file, transfer_file, harvest_file, sampling_file)
             
@@ -346,7 +347,8 @@ def main():
                 analyzer.processed_data.update(mock_cages)
                 
                 st.sidebar.success("✅ Data processed successfully!")
-                st.rerun()
+    
+    # Remove the manual process button as it's now automatic
     
     # Main dashboard
     if analyzer.processed_data:
