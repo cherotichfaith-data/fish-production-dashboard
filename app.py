@@ -66,30 +66,37 @@ class FishProductionAnalyzer:
             if feeding_file is not None:
                 self.feeding_data = pd.read_excel(feeding_file)
                 self.feeding_data = self.normalize_columns(self.feeding_data, ['date', 'cage', 'feed_amount_kg'])
-                self.feeding_data['date'] = pd.to_datetime(self.feeding_data['date'])
+                # Handle date parsing with error handling for malformed dates
+                self.feeding_data['date'] = pd.to_datetime(self.feeding_data['date'], errors='coerce', dayfirst=True)
+                # Remove rows with invalid dates
+                self.feeding_data = self.feeding_data.dropna(subset=['date'])
                 
             # Load transfer data
             if transfer_file is not None:
                 self.transfer_data = pd.read_excel(transfer_file)
                 self.transfer_data = self.normalize_columns(self.transfer_data, ['date', 'origin_cage', 'destination_cage', 'number_of_fish', 'total_weight'])
-                self.transfer_data['date'] = pd.to_datetime(self.transfer_data['date'])
+                self.transfer_data['date'] = pd.to_datetime(self.transfer_data['date'], errors='coerce', dayfirst=True)
+                self.transfer_data = self.transfer_data.dropna(subset=['date'])
                 self.transfer_data = self.validate_transfer_units(self.transfer_data)
                 
             # Load harvest data
             if harvest_file is not None:
                 self.harvest_data = pd.read_excel(harvest_file)
                 self.harvest_data = self.normalize_columns(self.harvest_data, ['date', 'cage', 'number_of_fish', 'total_weight', 'abw_g'])
-                self.harvest_data['date'] = pd.to_datetime(self.harvest_data['date'])
+                self.harvest_data['date'] = pd.to_datetime(self.harvest_data['date'], errors='coerce', dayfirst=True)
+                self.harvest_data = self.harvest_data.dropna(subset=['date'])
                 
             # Load sampling data
             if sampling_file is not None:
                 self.sampling_data = pd.read_excel(sampling_file)
                 self.sampling_data = self.normalize_columns(self.sampling_data, ['date', 'cage', 'number_of_fish', 'abw_g'])
-                self.sampling_data['date'] = pd.to_datetime(self.sampling_data['date'])
+                self.sampling_data['date'] = pd.to_datetime(self.sampling_data['date'], errors='coerce', dayfirst=True)
+                self.sampling_data = self.sampling_data.dropna(subset=['date'])
                 
             return True
         except Exception as e:
             st.error(f"Error loading data: {str(e)}")
+            st.error("Please check your date formats. Expected formats: DD/MM/YYYY, MM/DD/YYYY, or YYYY-MM-DD")
             return False
     
     def add_corrected_stocking_event(self, cage_num=2):
@@ -303,9 +310,9 @@ def main():
     st.sidebar.header("📁 Data Upload")
     
     feeding_file = st.sidebar.file_uploader("Upload Feeding Record", type=['xlsx', 'xls'], key="feeding")
-    transfer_file = st.sidebar.file_uploader("Upload Fish Transfer", type=['xlsx', 'xls'], key="transfer")
     harvest_file = st.sidebar.file_uploader("Upload Fish Harvest", type=['xlsx', 'xls'], key="harvest")
     sampling_file = st.sidebar.file_uploader("Upload Fish Sampling (Optional)", type=['xlsx', 'xls'], key="sampling")
+    transfer_file = st.sidebar.file_uploader("Upload Fish Transfer (Optional)", type=['xlsx', 'xls'], key="transfer")
     
     use_synthetic_sampling = st.sidebar.checkbox("Use Synthetic Sampling Data", value=True, 
                                                 help="Generate synthetic sampling data if no sampling file is uploaded")
