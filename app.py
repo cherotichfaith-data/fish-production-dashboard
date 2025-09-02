@@ -100,19 +100,19 @@ class FishProductionAnalyzer:
             return False
     
     def add_corrected_stocking_event(self, cage_num=2):
-        """Add corrected stocking event for Cage 2"""
+        """Add corrected stocking event for Cage 2: Monday 26th August 2024, 7290 fish @ 11.9g ABW"""
         stocking_event = {
-            'date': pd.Timestamp('2024-08-26'),
+            'date': pd.Timestamp('2024-08-26'),  # Monday 26th August 2024
             'cage': cage_num,
-            'number_of_fish': 7290,
-            'abw_g': 11.9,
+            'number_of_fish': 7290,  # Corrected fish count
+            'abw_g': 11.9,  # Corrected ABW
             'event_type': 'stocking'
         }
         
         if self.sampling_data is None:
             self.sampling_data = pd.DataFrame([stocking_event])
         else:
-            # Remove any existing stocking events for this cage
+            # Remove any existing stocking events for this cage before 27 Aug 2024
             self.sampling_data = self.sampling_data[~((self.sampling_data['cage'] == cage_num) & 
                                                      (self.sampling_data['date'] < pd.Timestamp('2024-08-27')))]
             # Add corrected stocking event
@@ -468,13 +468,14 @@ def main():
                 mime="text/csv"
             )
     else:
-        st.info("👆 Please upload at least the Feeding Record file to begin analysis.")
+        st.info("👆 Please upload both Feeding Record and Fish Sampling files to begin analysis.")
+        st.warning("⚠️ Fish Sampling file is required for accurate production calculations.")
         
         # Show sample data structure
         st.subheader("📖 Expected Data Structure")
         
         with st.expander("Sample Data Formats"):
-            st.markdown("**Feeding Record:**")
+            st.markdown("**Feeding Record (Required):**")
             sample_feeding = pd.DataFrame({
                 'DATE': ['2024-08-27', '2024-08-28'],
                 'CAGE NUMBER': [2, 2],
@@ -482,17 +483,16 @@ def main():
             })
             st.dataframe(sample_feeding)
             
-            st.markdown("**Fish Transfer:**")
-            sample_transfer = pd.DataFrame({
-                'DATE': ['2024-09-01'],
-                'ORIGIN CAGE': [2],
-                'DESTINATION CAGE': [3],
-                'NUMBER OF FISH': [100],
-                'Total weight': [2.5]
+            st.markdown("**Fish Sampling (Required):**")
+            sample_sampling = pd.DataFrame({
+                'DATE': ['2024-08-26', '2024-09-15', '2024-10-15'],
+                'CAGE NUMBER': [2, 2, 2],
+                'NUMBER OF FISH': [7290, 7200, 7100],
+                'AVERAGE BODY WEIGHT (g)': [11.9, 45.2, 85.3]
             })
-            st.dataframe(sample_transfer)
+            st.dataframe(sample_sampling)
             
-            st.markdown("**Fish Harvest:**")
+            st.markdown("**Fish Harvest (Optional):**")
             sample_harvest = pd.DataFrame({
                 'DATE': ['2025-07-09'],
                 'CAGE': [2],
@@ -501,6 +501,16 @@ def main():
                 'ABW [g]': [500]
             })
             st.dataframe(sample_harvest)
+            
+            st.markdown("**Fish Transfer (Optional):**")
+            sample_transfer = pd.DataFrame({
+                'DATE': ['2024-09-01'],
+                'ORIGIN CAGE': [2],
+                'DESTINATION CAGE': [3],
+                'NUMBER OF FISH': [100],
+                'Total weight': [2.5]
+            })
+            st.dataframe(sample_transfer)
 
 if __name__ == "__main__":
     main()
